@@ -493,7 +493,7 @@ STRICT RULES: Do not add, remove, move, or alter any person, face, facial featur
 
   document.getElementById('closeModal').addEventListener('click', () => document.getElementById('modal').classList.remove('show'));
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 
   // redraw once fonts are ready
   draw();
