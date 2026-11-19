@@ -106,6 +106,7 @@
     </details>
 
     <button class="btn" id="save" disabled>Save cover</button>
+    <button class="btn ghost" id="newBtn">＋ Create new</button>
   </div>
 
   <div class="preview">
@@ -121,6 +122,7 @@
   <p>Press and hold the image, then tap “Save to Photos”</p>
   <p class="muted">On a computer: right-click → Save image as…</p>
   <img id="outImg" alt="Finished cover">
+  <button class="btn" id="modalNew">＋ Create new</button>
   <button class="btn ghost" id="closeModal">Done</button>
 </div>
 
@@ -138,7 +140,7 @@
     set(k, v) { try { localStorage.setItem('rcm_' + k, JSON.stringify(v)); } catch {} }
   };
 
-  let img = null, pos = store.get('pos', 'right');
+  let img = null, saved = false, pos = store.get('pos', 'right');
   let view = { zoom:1, ox:0, oy:0 }; // ox/oy = pan offset in canvas px
 
   els.birthday.value = store.get('birthday', '');
@@ -297,11 +299,11 @@
     if (shot) els.date.value = toISO(shot);
     const url = URL.createObjectURL(f);
     const im = new Image();
-    im.onload = () => { img = im; view = { zoom:1, ox:0, oy:0 }; els.zoom.value = 1; els.uploadText.textContent = '📷 Change photo'; draw(); };
+    im.onload = () => { img = im; saved = false; view = { zoom:1, ox:0, oy:0 }; els.zoom.value = 1; els.uploadText.textContent = '📷 Change photo'; draw(); };
     im.onerror = () => { els.uploadText.textContent = '⚠️ Could not read that image — try a JPEG or PNG'; };
     im.src = url;
   });
-  ['day', 'date', 'subtitle'].forEach(k => els[k].addEventListener('input', () => draw()));
+  ['day', 'date', 'subtitle'].forEach(k => els[k].addEventListener('input', () => { saved = false; draw(); }));
   els.birthday.addEventListener('input', () => { store.set('birthday', els.birthday.value); draw(); });
   els.guide.addEventListener('change', () => { store.set('guide', els.guide.checked); draw(); });
   els.zoom.addEventListener('input', () => { view.zoom = +els.zoom.value; draw(); });
@@ -325,6 +327,7 @@
   els.save.addEventListener('click', () => {
     draw(false);
     const n = parseInt(els.day.value, 10); if (!isNaN(n)) store.set('lastDay', n);
+    saved = true;
     const name = `day-${els.day.value || 'cover'}.jpg`;
     cv.toBlob(async b => {
       draw();
@@ -346,6 +349,23 @@
       document.getElementById('modal').classList.add('show');
     }, 'image/jpeg', 0.92);
   });
+  // create new: clear photo + subtitle, next day number, today's date
+  function createNew() {
+    if (img && !saved && !confirm('Discard this cover? It hasn\u2019t been saved.')) return;
+    img = null; saved = false; els.file.value = '';
+    els.subtitle.value = '';
+    const last = store.get('lastDay', null);
+    els.day.value = last ? last + 1 : '';
+    els.date.value = toISO(new Date());
+    view = { zoom:1, ox:0, oy:0 }; els.zoom.value = 1;
+    els.uploadText.textContent = '📷 Choose photo';
+    document.getElementById('modal').classList.remove('show');
+    draw();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  document.getElementById('newBtn').addEventListener('click', createNew);
+  document.getElementById('modalNew').addEventListener('click', createNew);
+
   document.getElementById('closeModal').addEventListener('click', () => document.getElementById('modal').classList.remove('show'));
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
