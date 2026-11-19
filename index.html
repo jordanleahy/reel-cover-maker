@@ -48,7 +48,8 @@
   details[open] summary { margin-bottom:12px; }
   .check { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--muted); font-weight:600; }
   .preview { display:grid; gap:10px; justify-items:center; }
-  .stage { position:relative; width:100%; max-width:420px; aspect-ratio:9/16; border-radius:14px; overflow:hidden; background:#000; touch-action:none; }
+  .stage { position:relative; width:min(100%, 420px, calc(62vh * 9 / 16)); aspect-ratio:9/16; border-radius:14px; overflow:hidden; background:#000; touch-action:pan-y; }
+  .stage.pannable { touch-action:none; }
   .stage canvas { width:100%; height:100%; display:block; }
   .hint { font-size:13px; color:var(--muted); text-align:center; }
   input[type=range] { width:100%; accent-color:var(--accent); }
@@ -318,6 +319,7 @@
     else if (!age) els.computed.innerHTML = '<span class="warn">Date is before the birthday.</span>';
     else els.computed.innerHTML = `Age: <b>${age}</b> · Date: <b>${fmtDate(d)}</b>`;
     els.save.disabled = !img;
+    document.getElementById('stage').classList.toggle('pannable', !!img);
   }
 
   // ---------- enhance (Nano Banana) ----------
