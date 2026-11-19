@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reel Cover Maker</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Covers">
+<meta name="theme-color" content="#0e0e10">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0e0e10; --panel:#18181b; --line:#2a2a2e; --text:#f4f4f5; --muted:#a1a1aa; --accent:#ff5a1f; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { padding: calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 24px); }
+  .wrap { max-width: 980px; margin: 0 auto; display:grid; gap:18px; grid-template-columns: 1fr; }
+  @media (min-width: 820px) { .wrap { grid-template-columns: 380px 1fr; align-items:start; } .preview { position:sticky; top:16px; } }
+  h1 { font: 22px/1.1 "Archivo Black", sans-serif; margin: 4px 0 2px; letter-spacing:-.01em; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 6px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; display:grid; gap:14px; }
+  label { display:grid; gap:6px; font-size:13px; color:var(--muted); font-weight:600; }
+  input[type=text], input[type=number], input[type=date] {
+    width:100%; font-size:17px; padding:12px; border-radius:10px; border:1px solid var(--line);
+    background:#0e0e10; color:var(--text); -webkit-appearance:none; appearance:none; min-height:46px;
+  }
+  input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .upload { display:flex; align-items:center; justify-content:center; gap:8px; padding:18px; border:2px dashed var(--line); border-radius:14px; cursor:pointer; font-weight:700; color:var(--text); text-align:center; }
+  .upload:hover { border-color:var(--accent); }
+  .upload input { display:none; }
+  .seg { display:flex; background:#0e0e10; border:1px solid var(--line); border-radius:10px; padding:3px; }
+  .seg button { flex:1; border:0; background:transparent; color:var(--muted); font-weight:700; padding:9px; border-radius:8px; font-size:14px; }
+  .seg button.on { background:var(--line); color:var(--text); }
+  .computed { font-size:14px; color:var(--muted); background:#0e0e10; border-radius:10px; padding:10px 12px; border:1px solid var(--line); }
+  .computed b { color:var(--text); }
+  .btn { width:100%; border:0; border-radius:12px; padding:15px; font-size:17px; font-weight:800; background:var(--accent); color:#fff; cursor:pointer; }
+  .btn:disabled { opacity:.4; }
+  .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--text); font-weight:700; padding:11px; font-size:15px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:14px; font-weight:600; }
+  details[open] summary { margin-bottom:12px; }
+  .check { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--muted); font-weight:600; }
+  .preview { display:grid; gap:10px; justify-items:center; }
+  .stage { position:relative; width:100%; max-width:420px; aspect-ratio:9/16; border-radius:14px; overflow:hidden; background:#000; touch-action:none; }
+  .stage canvas { width:100%; height:100%; display:block; }
+  .hint { font-size:13px; color:var(--muted); text-align:center; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.92); display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px); z-index:10; }
+  .modal.show { display:flex; }
+  .modal img { max-width:100%; max-height:72vh; border-radius:12px; -webkit-touch-callout:default; }
+  .modal p { margin:0; text-align:center; color:var(--text); font-weight:700; }
+  .modal .muted { color:var(--muted); font-weight:500; font-size:14px; }
+  .modal .btn { max-width:320px; }
+  .warn { color:#fbbf24; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div>
+      <h1>Reel Cover Maker</h1>
+      <p class="sub">Upload a photo, set the day and subtitle. Date and age fill in on their own.</p>
+    </div>
+
+    <label class="upload" id="uploadLabel">
+      <input type="file" id="file" accept="image/*">
+      <span id="uploadText">📷 Choose photo</span>
+    </label>
+
+    <div class="row">
+      <label>Day
+        <input type="number" id="day" inputmode="numeric" placeholder="489">
+      </label>
+      <label>Date
+        <input type="date" id="date">
+      </label>
+    </div>
+
+    <label>Subtitle
+      <input type="text" id="subtitle" placeholder="Park After Dark" maxlength="80">
+    </label>
+
+    <div class="computed" id="computed">Add a birthday below to calculate the age.</div>
+
+    <details id="settings">
+      <summary>Settings</summary>
+      <div style="display:grid; gap:14px;">
+        <label>Birthday
+          <input type="date" id="birthday">
+        </label>
+        <div>
+          <div style="font-size:13px;color:var(--muted);font-weight:600;margin-bottom:6px">Date & age position</div>
+          <div class="seg" id="posSeg">
+            <button data-v="left">Bottom left</button>
+            <button data-v="right">Bottom right</button>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="guide"> Show profile-grid crop guide</label>
+      </div>
+    </details>
+
+    <button class="btn" id="save" disabled>Save cover</button>
+  </div>
+
+  <div class="preview">
+    <div class="stage" id="stage"><canvas id="cv" width="1080" height="1920"></canvas></div>
+    <div style="width:100%;max-width:420px;display:grid;gap:6px">
+      <label>Zoom <input type="range" id="zoom" min="1" max="3" step="0.01" value="1"></label>
+    </div>
+    <div class="hint">Drag the photo to reposition it.</div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <p>Press and hold the image, then tap “Save to Photos”</p>
+  <p class="muted">On a computer: right-click → Save image as…</p>
+  <img id="outImg" alt="Finished cover">
+  <button class="btn ghost" id="closeModal">Done</button>
+</div>
+
+<script>
+(() => {
+  const W = 1080, H = 1920;
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const els = { file:$('file'), day:$('day'), date:$('date'), subtitle:$('subtitle'), birthday:$('birthday'),
+    computed:$('computed'), save:$('save'), zoom:$('zoom'), guide:$('guide'), uploadText:$('uploadText') };
+
+  // ---------- storage (best effort) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('rcm_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('rcm_' + k, JSON.stringify(v)); } catch {} }
+  };
+
+  let img = null, pos = store.get('pos', 'right');
+  let view = { zoom:1, ox:0, oy:0 }; // ox/oy = pan offset in canvas px
+
+  els.birthday.value = store.get('birthday', '');
+  els.guide.checked = store.get('guide', false);
+  const lastDay = store.get('lastDay', null);
+  if (lastDay) els.day.value = lastDay + 1;
+  els.date.value = toISO(new Date());
+  if (!els.birthday.value) $('settings').open = true;
+
+  // ---------- date helpers ----------
+  function toISO(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+  function parseISO(s) { if (!s) return null; const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmtDate(d) { return `${MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
+  function ageParts(b, d) {
+    let months = (d.getFullYear() - b.getFullYear()) * 12 + (d.getMonth() - b.getMonth());
+    if (d.getDate() < b.getDate()) months--;
+    if (months < 0) return null;
+    return { y: Math.floor(months / 12), m: months % 12 };
+  }
+  function ageText() {
+    const b = parseISO(els.birthday.value), d = parseISO(els.date.value);
+    if (!b || !d) return '';
+    const a = ageParts(b, d); if (!a) return '';
+    if (a.m === 0) return `${a.y} Years Old`;
+    if (a.y === 0) return `${a.m}Months`;
+    return `${a.y}Years${a.m}Months`;
+  }
+
+  // ---------- EXIF date (JPEG) ----------
+  async function exifDate(file) {
+    try {
+      const buf = await file.slice(0, 256 * 1024).arrayBuffer();
+      const v = new DataView(buf);
+      if (v.getUint16(0) !== 0xFFD8) return null;
+      let off = 2;
+      while (off + 4 < v.byteLength) {
+        const marker = v.getUint16(off); const len = v.getUint16(off + 2);
+        if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) {
+          const t = off + 10, le = v.getUint16(t) === 0x4949;
+          const u16 = o => v.getUint16(t + o, le), u32 = o => v.getUint32(t + o, le);
+          const readStr = (o, n) => { let s=''; for (let i=0;i<n;i++){ const c=v.getUint8(t+o+i); if(!c)break; s+=String.fromCharCode(c);} return s; };
+          const scan = (ifd, wanted) => {
+            const n = u16(ifd); const out = {};
+            for (let i = 0; i < n; i++) {
+              const e = ifd + 2 + i * 12, tag = u16(e);
+              if (wanted.includes(tag)) out[tag] = tag === 0x8769 ? u32(e + 8) : readStr(u32(e + 8), u32(e + 4));
+            }
+            return out;
+          };
+          const ifd0 = scan(u32(4), [0x0132, 0x8769]);
+          let s = null;
+          if (ifd0[0x8769]) s = scan(ifd0[0x8769], [0x9003])[0x9003];
+          s = s || ifd0[0x0132];
+          const m = s && s.match(/^(\d{4}):(\d{2}):(\d{2})/);
+          return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+        }
+        if ((marker & 0xFF00) !== 0xFF00) break;
+        off += 2 + len;
+      }
+    } catch {}
+    return null;
+  }
+
+  // ---------- drawing ----------
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function wrap(text, maxW) {
+    const words = text.split(/\s+/).filter(Boolean), lines = []; let line = '';
+    for (const w of words) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+    if (line) lines.push(line); return lines;
+  }
+  function clampPan() {
+    if (!img) return;
+    const s = Math.max(W / img.width, H / img.height) * view.zoom;
+    const mx = Math.max(0, (img.width * s - W) / 2), my = Math.max(0, (img.height * s - H) / 2);
+    view.ox = Math.min(mx, Math.max(-mx, view.ox)); view.oy = Math.min(my, Math.max(-my, view.oy));
+  }
+
+  function draw(withGuide = els.guide.checked) {
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+    if (img) {
+      clampPan();
+      const s = Math.max(W / img.width, H / img.height) * view.zoom;
+      const dw = img.width * s, dh = img.height * s;
+      ctx.drawImage(img, (W - dw) / 2 + view.ox, (H - dh) / 2 + view.oy, dw, dh);
+    } else {
+      ctx.fillStyle = '#3f3f46'; ctx.font = '700 44px Archivo, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Your photo here', W / 2, H / 2); ctx.textAlign = 'left';
+    }
+
+    const M = 48;           // side margin
+    const TOP = 290;        // sits just inside the 3:4 grid crop (crop starts at y=240)
+    const BOTTOM = 1640;    // grid crop ends at y=1680
+
+    // Day box
+    const dayVal = els.day.value.trim();
+    let y = TOP;
+    if (dayVal) {
+      ctx.font = '132px "Archivo Black", sans-serif'; ctx.textBaseline = 'alphabetic';
+      const txt = `Day ${dayVal}`, tw = ctx.measureText(txt).width;
+      const padX = 36, h = 178, w = tw + padX * 2;
+      ctx.fillStyle = '#000'; roundRect(M, y, w, h, 26); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(txt, M + padX, y + 134);
+      y += h - 6;
+    }
+
+    // Subtitle box
+    const sub = els.subtitle.value.trim();
+    if (sub) {
+      ctx.font = '800 50px Archivo, sans-serif';
+      const lines = wrap(sub, W - M * 2 - 60 - 120).slice(0, 4);
+      const lh = 58, padX = 28, padY = 18;
+      const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + padX * 2;
+      const h = lines.length * lh + padY * 2 - 4;
+      ctx.fillStyle = '#000'; roundRect(M + 14, y, w, h, 16); ctx.fill();
+      ctx.fillStyle = '#fff';
+      lines.forEach((l, i) => ctx.fillText(l, M + 14 + padX, y + padY + 44 + i * lh));
+    }
+
+    // Age / date box
+    const age = ageText(), d = parseISO(els.date.value);
+    const lines = [age, d ? fmtDate(d) : ''].filter(Boolean);
+    if (lines.length) {
+      ctx.font = '800 50px Archivo, sans-serif';
+      const lh = 56, padX = 26, padY = 16;
+      const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + padX * 2;
+      const h = lines.length * lh + padY * 2 - 2;
+      const x = pos === 'right' ? W - M - 40 - w : M + 40;
+      const top = BOTTOM - h;
+      ctx.fillStyle = '#000'; roundRect(x, top, w, h, 16); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'right';
+      lines.forEach((l, i) => ctx.fillText(l, x + w - padX, top + padY + 44 + i * lh));
+      ctx.textAlign = 'left';
+    }
+
+    if (withGuide) {
+      ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, 240); ctx.fillRect(0, 1680, W, 240);
+      ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.setLineDash([16, 12]); ctx.lineWidth = 4;
+      ctx.strokeRect(2, 240, W - 4, 1440); ctx.setLineDash([]);
+    }
+
+    // Status line
+    if (!els.birthday.value) els.computed.innerHTML = '<span class="warn">Add a birthday in Settings to calculate the age.</span>';
+    else if (!age) els.computed.innerHTML = '<span class="warn">Date is before the birthday.</span>';
+    else els.computed.innerHTML = `Age: <b>${age}</b> · Date: <b>${fmtDate(d)}</b>`;
+    els.save.disabled = !img;
+  }
+
+  // ---------- events ----------
+  els.file.addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const shot = await exifDate(f);
+    if (shot) els.date.value = toISO(shot);
+    const url = URL.createObjectURL(f);
+    const im = new Image();
+    im.onload = () => { img = im; view = { zoom:1, ox:0, oy:0 }; els.zoom.value = 1; els.uploadText.textContent = '📷 Change photo'; draw(); };
+    im.onerror = () => { els.uploadText.textContent = '⚠️ Could not read that image — try a JPEG or PNG'; };
+    im.src = url;
+  });
+  ['day', 'date', 'subtitle'].forEach(k => els[k].addEventListener('input', () => draw()));
+  els.birthday.addEventListener('input', () => { store.set('birthday', els.birthday.value); draw(); });
+  els.guide.addEventListener('change', () => { store.set('guide', els.guide.checked); draw(); });
+  els.zoom.addEventListener('input', () => { view.zoom = +els.zoom.value; draw(); });
+
+  const seg = document.getElementById('posSeg');
+  const paintSeg = () => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === pos));
+  seg.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; pos = b.dataset.v; store.set('pos', pos); paintSeg(); draw(); });
+  paintSeg();
+
+  // drag to pan
+  const stage = document.getElementById('stage'); let drag = null;
+  stage.addEventListener('pointerdown', e => { if (!img) return; drag = { x:e.clientX, y:e.clientY, ox:view.ox, oy:view.oy }; stage.setPointerCapture(e.pointerId); });
+  stage.addEventListener('pointermove', e => {
+    if (!drag) return; const k = W / stage.clientWidth;
+    view.ox = drag.ox + (e.clientX - drag.x) * k; view.oy = drag.oy + (e.clientY - drag.y) * k; draw();
+  });
+  const end = () => { drag = null; };
+  stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
+
+  // save: share sheet (iOS "Save Image") → download → long-press fallback
+  els.save.addEventListener('click', () => {
+    draw(false);
+    const n = parseInt(els.day.value, 10); if (!isNaN(n)) store.set('lastDay', n);
+    const name = `day-${els.day.value || 'cover'}.jpg`;
+    cv.toBlob(async b => {
+      draw();
+      const file = new File([b], name, { type: 'image/jpeg' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          return;
+        }
+      } catch (err) { if (err && err.name === 'AbortError') return; }
+      const url = URL.createObjectURL(b);
+      const isTouch = matchMedia('(pointer:coarse)').matches;
+      if (!isTouch) {
+        const a = document.createElement('a'); a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        return;
+      }
+      document.getElementById('outImg').src = url;
+      document.getElementById('modal').classList.add('show');
+    }, 'image/jpeg', 0.92);
+  });
+  document.getElementById('closeModal').addEventListener('click', () => document.getElementById('modal').classList.remove('show'));
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  // redraw once fonts are ready
+  draw();
+  Promise.all([document.fonts.load('132px "Archivo Black"'), document.fonts.load('800 50px Archivo')]).then(() => draw()).catch(() => {});
+})();
+</script>
+</body>
+</html>
