@@ -18,6 +18,7 @@
 <style>
   :root { --bg:#0e0e10; --panel:#18181b; --line:#2a2a2e; --text:#f4f4f5; --muted:#a1a1aa; --accent:#ff5a1f; }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   html,body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   body { padding: calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 24px); }
   .wrap { max-width: 980px; margin: 0 auto; display:grid; gap:18px; grid-template-columns: 1fr; }
@@ -58,6 +59,15 @@
   .modal .muted { color:var(--muted); font-weight:500; font-size:14px; }
   .modal .btn { max-width:320px; }
   .warn { color:#fbbf24; font-size:13px; }
+  .enh { display:grid; gap:8px; }
+  .enh .btn { background:linear-gradient(135deg,#7c3aed,#ff5a1f); }
+  .enh-row { display:flex; gap:8px; }
+  .enh-row .btn { flex:1; }
+  .status { font-size:13px; color:var(--muted); min-height:18px; }
+  .status.err { color:#f87171; }
+  select { width:100%; font-size:16px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#0e0e10; color:var(--text); min-height:46px; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid #fff6; border-top-color:#fff; border-radius:50%; animation:sp 0.8s linear infinite; vertical-align:-2px; margin-right:6px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -72,6 +82,15 @@
       <input type="file" id="file" accept="image/*">
       <span id="uploadText">📷 Choose photo</span>
     </label>
+
+    <div class="enh" id="enhBox" hidden>
+      <button class="btn" id="enhBtn">✨ Enhance photo</button>
+      <div class="enh-row" id="cmpRow" hidden>
+        <button class="btn ghost" id="cmpBtn">Show original</button>
+        <button class="btn ghost" id="undoBtn">Undo enhance</button>
+      </div>
+      <div class="status" id="enhStatus"></div>
+    </div>
 
     <div class="row">
       <label>Day
@@ -102,6 +121,15 @@
           </div>
         </div>
         <label class="check"><input type="checkbox" id="guide"> Show profile-grid crop guide</label>
+        <label>Gemini API key <span style="font-weight:400">(saved only on this device)</span>
+          <input type="password" id="apiKey" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <label>Enhance model
+          <select id="model">
+            <option value="gemini-nano-banana-2.1">Nano Banana 2.1 (fast)</option>
+            <option value="gemini-3-pro-image-preview">Nano Banana Pro (most detail)</option>
+          </select>
+        </label>
       </div>
     </details>
 
@@ -292,6 +320,103 @@
     els.save.disabled = !img;
   }
 
+  // ---------- enhance (Nano Banana) ----------
+  const ENHANCE_PROMPT = `Restore and enhance this exact photograph like a professional photo retoucher.
+- Remove noise and grain; recover fine detail and sharpness (snow texture, fabric, helmets).
+- Balance exposure: tame blown-out ceiling lights and recover shadow detail.
+- Correct white balance so the snow is clean white and skin tones look natural.
+- Very gently reduce wide-angle/fisheye barrel distortion without moving any subject.
+STRICT RULES: Do not add, remove, move, or alter any person, face, facial feature, expression, body, clothing, logo, or object. Do not change the framing, crop, pose, or composition. Keep it fully photorealistic — the same moment, as if captured on a high-end camera.`;
+
+  const keyEl = $('apiKey'), modelEl = $('model');
+  keyEl.value = store.get('apiKey', '');
+  modelEl.value = store.get('model', 'gemini-nano-banana-2.1');
+  keyEl.addEventListener('input', () => { store.set('apiKey', keyEl.value.trim()); syncEnh(); });
+  modelEl.addEventListener('change', () => store.set('model', modelEl.value));
+
+  let original = null, enhanced = null, showingOriginal = false, busy = false;
+  const enhBox = $('enhBox'), enhBtn = $('enhBtn'), cmpRow = $('cmpRow'), enhStatus = $('enhStatus');
+  function setStatus(msg, err) { enhStatus.textContent = msg || ''; enhStatus.classList.toggle('err', !!err); }
+  function syncEnh() {
+    enhBox.hidden = !img;
+    cmpRow.hidden = !enhanced;
+    enhBtn.disabled = busy || !img;
+    enhBtn.innerHTML = busy ? '<span class="spin"></span>Enhancing… (10–40s)' : (enhanced ? '✨ Enhance again' : '✨ Enhance photo');
+    $('cmpBtn').textContent = showingOriginal ? 'Show enhanced' : 'Show original';
+  }
+
+  function imageToBase64(im, maxSide = 2048) {
+    const k = Math.min(1, maxSide / Math.max(im.width, im.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.92).split(',')[1];
+  }
+  // Find the first image payload anywhere in a response (handles both API shapes)
+  function findImage(o) {
+    if (!o || typeof o !== 'object') return null;
+    const data = o.data, mime = o.mime_type || o.mimeType;
+    if (typeof data === 'string' && data.length > 1000 && (!mime || mime.startsWith('image/'))) return { data, mime: mime || 'image/png' };
+    for (const v of Object.values(o)) { const r = findImage(v); if (r) return r; }
+    return null;
+  }
+  function findText(o) {
+    if (!o || typeof o !== 'object') return '';
+    if (typeof o.text === 'string') return o.text;
+    for (const v of Object.values(o)) { const t = findText(v); if (t) return t; }
+    return '';
+  }
+  async function callGemini(key, model, b64) {
+    const base = 'https://generativelanguage.googleapis.com/v1beta';
+    // 1) Interactions API (current docs)
+    let res = await fetch(`${base}/interactions`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json', 'Api-Revision': '2026-05-20' },
+      body: JSON.stringify({
+        model,
+        input: [ { type: 'text', text: ENHANCE_PROMPT }, { type: 'image', mime_type: 'image/jpeg', data: b64 } ],
+        response_format: { type: 'image', aspect_ratio: '9:16', image_size: '2K' }
+      })
+    }).catch(() => null);
+    let json = res ? await res.json().catch(() => null) : null;
+    let found = findImage(json);
+    if (found) return found;
+    const firstErr = json && json.error && json.error.message;
+    if (res && (res.status === 401 || res.status === 403)) throw new Error(firstErr || 'API key was rejected.');
+    // 2) Fallback: generateContent
+    res = await fetch(`${base}/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [ { text: ENHANCE_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: b64 } } ] }],
+        generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '9:16', imageSize: '2K' } }
+      })
+    });
+    json = await res.json().catch(() => null);
+    found = findImage(json);
+    if (found) return found;
+    throw new Error((json && json.error && json.error.message) || firstErr || findText(json) || `No image returned (HTTP ${res.status}).`);
+  }
+  function loadImg(src) { return new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = src; }); }
+
+  enhBtn.addEventListener('click', async () => {
+    const key = (keyEl.value || '').trim();
+    if (!key) { $('settings').open = true; keyEl.focus(); setStatus('Add your Gemini API key in Settings first.', true); return; }
+    if (!original) original = img;
+    busy = true; syncEnh(); setStatus('Sending photo to ' + modelEl.options[modelEl.selectedIndex].text + '…');
+    try {
+      const out = await callGemini(key, modelEl.value, imageToBase64(original));
+      enhanced = await loadImg(`data:${out.mime};base64,${out.data}`);
+      img = enhanced; showingOriginal = false; saved = false;
+      setStatus('Enhanced. Check faces against the original before saving.');
+      draw();
+    } catch (e) {
+      setStatus('Enhance failed: ' + (e && e.message ? e.message : e), true);
+    } finally { busy = false; syncEnh(); }
+  });
+  $('cmpBtn').addEventListener('click', () => { showingOriginal = !showingOriginal; img = showingOriginal ? original : enhanced; syncEnh(); draw(); });
+  $('undoBtn').addEventListener('click', () => { img = original; enhanced = null; original = null; showingOriginal = false; setStatus(''); syncEnh(); draw(); });
+
   // ---------- events ----------
   els.file.addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -299,7 +424,7 @@
     if (shot) els.date.value = toISO(shot);
     const url = URL.createObjectURL(f);
     const im = new Image();
-    im.onload = () => { img = im; saved = false; view = { zoom:1, ox:0, oy:0 }; els.zoom.value = 1; els.uploadText.textContent = '📷 Change photo'; draw(); };
+    im.onload = () => { img = im; saved = false; original = null; enhanced = null; showingOriginal = false; setStatus(''); syncEnh(); view = { zoom:1, ox:0, oy:0 }; els.zoom.value = 1; els.uploadText.textContent = '📷 Change photo'; draw(); };
     im.onerror = () => { els.uploadText.textContent = '⚠️ Could not read that image — try a JPEG or PNG'; };
     im.src = url;
   });
@@ -352,7 +477,7 @@
   // create new: clear photo + subtitle, next day number, today's date
   function createNew() {
     if (img && !saved && !confirm('Discard this cover? It hasn\u2019t been saved.')) return;
-    img = null; saved = false; els.file.value = '';
+    img = null; saved = false; els.file.value = ''; original = null; enhanced = null; showingOriginal = false; setStatus(''); syncEnh();
     els.subtitle.value = '';
     const last = store.get('lastDay', null);
     els.day.value = last ? last + 1 : '';
